@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="fastclaw-ai/fastclaw"
 BINARY="fastclaw"
-INSTALL_DIR="/usr/local/bin"
+# INSTALL_DIR="/data/data/com.termux/files/usr/bin"
 
 # Colors
 RED='\033[0;31m'
