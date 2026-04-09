@@ -173,16 +173,30 @@ func writeOpenClawConfig(port int, token string) {
 		return
 	}
 
-	cfg := map[string]any{
-		"gateway": map[string]any{
-			"port": port,
-			"auth": map[string]string{
-				"token": token,
-			},
-		},
+	// Read existing config if it exists
+	configPath := filepath.Join(dir, "openclaw.json")
+	cfg := make(map[string]any)
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			slog.Warn("failed to parse existing openclaw.json, creating new", "error", err)
+			cfg = make(map[string]any)
+		}
 	}
+
+	// Update only the gateway section
+	if cfg["gateway"] == nil {
+		cfg["gateway"] = make(map[string]any)
+	}
+	gatewayCfg := cfg["gateway"].(map[string]any)
+	gatewayCfg["port"] = port
+	if gatewayCfg["auth"] == nil {
+		gatewayCfg["auth"] = make(map[string]any)
+	}
+	authCfg := gatewayCfg["auth"].(map[string]any)
+	authCfg["token"] = token
+
 	data, _ := json.MarshalIndent(cfg, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "openclaw.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
 		slog.Warn("failed to write openclaw.json", "error", err)
 	} else {
 		slog.Info("wrote openclaw.json for ChatClaw auto-detect")
@@ -202,8 +216,8 @@ func runSetupWizard(port int) error {
 	})
 
 	// Open browser
-	url := fmt.Sprintf("http://localhost:%d", port)
-	go openBrowser(url)
+	// url := fmt.Sprintf("http://localhost:%d", port)
+	// go openBrowser(url)
 
 	if err := srv.Run(ctx); err != nil {
 		return err
@@ -215,17 +229,33 @@ func runSetupWizard(port int) error {
 }
 
 func openBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
+	// For Linux (including Termux), we need to be careful about system calls
+	if runtime.GOOS == "linux" {
+		// Try termux-open first (available in Termux)
+		if termuxCmd, err := exec.LookPath("termux-open"); err == nil {
+			cmd := exec.Command(termuxCmd, url)
+			_ = cmd.Run() // Ignore errors
+			return
+		}
+		// Try xdg-open as fallback
+		if xdgCmd, err := exec.LookPath("xdg-open"); err == nil {
+			cmd := exec.Command(xdgCmd, url)
+			_ = cmd.Run() // Ignore errors
+			return
+		}
+		// If no browser commands found, just return
 		return
 	}
-	cmd.Run()
-}
 
+	// For other OSes
+	switch runtime.GOOS {
+	case "darwin":
+		if openCmd, err := exec.LookPath("open"); err == nil {
+			cmd := exec.Command(openCmd, url)
+			_ = cmd.Run() // Ignore errors
+		}
+	case "windows":
+		cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		_ = cmd.Run() // Ignore errors
+	}
+}
